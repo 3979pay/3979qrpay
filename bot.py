@@ -95,21 +95,23 @@ def handle_callback(callback):
     if message:
         chat_id = message["chat"]["id"]
         message_id = message["message_id"]
-        caption = message.get("caption", "")
 
-        requests.post(
-            f"{API}/deleteMessage",
-            json={
-                "chat_id": chat_id,
-                "message_id": message_id,
-            },
-            timeout=30,
-        )
+caption = message.get("caption", "")
 
-        send_message(
-            chat_id,
-            f"✅ Đã chuyển khoản\n\n{caption}\n\nMã QR đã biến mất."
-        )
+qr_line = ""
+money_line = ""
+
+for line in caption.split("\n"):
+    if line.startswith("🏦 QR"):
+        qr_line = line
+
+    if line.startswith("💰"):
+        money_line = line
+
+send_message(
+    chat_id,
+    f"✅ Đã chuyển khoản\n\n{qr_line}\n{money_line}\n\nMã QR đã biến mất."
+)
 
 
 def handle_message(message):
