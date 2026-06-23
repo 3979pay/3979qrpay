@@ -66,6 +66,20 @@ def create_qr_url(bank_id, account_number, account_name, amount, description):
     )
 
 
+def split_amount(total, count):
+    base = total // count
+    remain = total % count
+
+    result = []
+    for i in range(count):
+        if i < remain:
+            result.append(base + 1)
+        else:
+            result.append(base)
+
+    return result
+
+
 def handle_callback(callback):
     callback_id = callback["id"]
     message = callback.get("message")
@@ -103,16 +117,18 @@ def handle_message(message):
         send_message(
             chat_id,
             "🏦 BOT TẠO MÃ QR NGÂN HÀNG\n\n"
-            "Gửi theo mẫu:\n\n"
-            "TECHCOMBANK\n"
-            "1863867979\n"
-            "PHANVANCUONG\n\n"
-            "Hoặc thêm số tiền:\n\n"
+            "Mẫu tạo 1 QR:\n\n"
             "TECHCOMBANK\n"
             "1863867979\n"
             "PHANVANCUONG\n"
             "150000\n\n"
-            "Nội dung mặc định: CHUYEN KHOAN"
+            "Mẫu chia ra nhiều QR:\n\n"
+            "TECHCOMBANK\n"
+            "1863867979\n"
+            "PHANVANCUONG\n"
+            "1000000\n"
+            "/4\n\n"
+            "Bot sẽ chia 1,000,000 thành 4 mã QR."
         )
         return
 
@@ -125,7 +141,13 @@ def handle_message(message):
             "TECHCOMBANK\n"
             "1863867979\n"
             "PHANVANCUONG\n"
-            "150000"
+            "150000\n\n"
+            "Hoặc:\n\n"
+            "TECHCOMBANK\n"
+            "1863867979\n"
+            "PHANVANCUONG\n"
+            "1000000\n"
+            "/4"
         )
         return
 
@@ -134,12 +156,22 @@ def handle_message(message):
     account_name = lines[2].upper()
 
     amount = 0
+    qr_count = 1
+
     if len(lines) >= 4:
         try:
             amount = int(lines[3].replace(",", "").replace(".", ""))
         except ValueError:
             send_message(chat_id, "Số tiền không hợp lệ.")
             return
+
+    if len(lines) >= 5:
+        match = re.match(r"^/(\d+)$", lines[4])
+        if not match:
+            send_message(chat_id, "Dòng cuối phải là dạng /4, /5, /10...")
+            return
+
+        qr_count = int(match.group(1))
 
     description = "CHUYEN KHOAN"
 
@@ -151,26 +183,54 @@ def handle_message(message):
         send_message(chat_id, "Số tài khoản không hợp lệ.")
         return
 
-    qr_url = create_qr_url(
-        bank_id,
-        account_number,
-        account_name,
-        amount,
-        description,
-    )
+    if amount <= 0:
+        send_message(chat_id, "Số tiền phải lớn hơn 0.")
+        return
 
-    caption = (
-        f"💵 Ngân hàng: {bank_id.upper()}\n"
-        f"💳 Số tài khoản: {account_number}\n"
-        f"👤 Chủ tài khoản: {account_name}\n"
-    )
+    if qr_count <= 0:
+        send_message(chat_id, "Số lượng QR phải lớn hơn 0.")
+        return
 
-    if amount > 0:
-        caption += f"💰 Số tiền: {amount:,} VND\n"
+    if qr_count > 50:
+        send_message(chat_id, "Chỉ cho tạo tối đa 50 mã QR mỗi lần.")
+        return
 
-    caption += f"📝 Nội dung: {description}"
+    amounts = split_amount(amount, qr_count)
 
-    send_qr_photo(chat_id, qr_url, caption)
+    if qr_count > 1:
+        send_message(
+            chat_id,
+            f"✅ Đang tạo {qr_count} mã QR\n"
+            f"💰 Tổng tiền: {amount:,} VND"
+        )
+
+    for index, qr_amount in enumerate(amounts, start=1):
+        qr_description = description
+
+        if qr_count > 1:
+            qr_description = f"{description} {index}"
+
+        qr_url = create_qr_url(
+            bank_id,
+            account_number,
+            account_name,
+            qr_amount,
+            qr_description,
+        )
+
+        caption = (
+            f"💵 Ngân hàng: {bank_id.upper()}\n"
+            f"💳 Số tài khoản: {account_number}\n"
+            f"👤 Chủ tài khoản: {account_name}\n"
+            f"💰 Số tiền: {qr_amount:,} VND\n"
+            f"📝 Nội dung: {qr_description}"
+        )
+
+        if qr_count > 1:
+            caption = f"🏦 QR {index}/{qr_count}\n" + caption
+
+        send_qr_photo(chat_id, qr_url, caption)
+        time.sleep(0.5)
 
 
 def run_bot():
