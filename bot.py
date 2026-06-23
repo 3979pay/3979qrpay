@@ -42,7 +42,6 @@ def send_qr_photo(chat_id, qr_url, caption):
         timeout=30,
     ).raise_for_status()
 
-
 def clean_text(text):
     text = text.upper().strip()
     text = re.sub(r"[^A-Z0-9 ]", "", text)
@@ -96,6 +95,7 @@ def handle_callback(callback):
     if message:
         chat_id = message["chat"]["id"]
         message_id = message["message_id"]
+        caption = message.get("caption", "")
 
         requests.post(
             f"{API}/deleteMessage",
@@ -106,7 +106,10 @@ def handle_callback(callback):
             timeout=30,
         )
 
-        send_message(chat_id, "✅ Đã chuyển khoản\nMã QR đã biến mất.")
+        send_message(
+            chat_id,
+            f"✅ Đã chuyển khoản\n\n{caption}\n\nMã QR đã biến mất."
+        )
 
 
 def handle_message(message):
