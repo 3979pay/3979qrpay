@@ -168,24 +168,29 @@ def handle_message(message):
     account_number = re.sub(r"[^A-Za-z0-9]", "", lines[1])
     account_name = lines[2].upper()
 
-    amount = 0
-    qr_count = 1
+    try:
+    amount = int(lines[3].replace(",", "").replace(".", ""))
+except ValueError:
+    send_message(chat_id, "Tổng số tiền không hợp lệ.")
+    return
 
-    if len(lines) >= 4:
-        try:
-            amount = int(lines[3].replace(",", "").replace(".", ""))
-        except ValueError:
-            send_message(chat_id, "Số tiền không hợp lệ.")
-            return
+match = re.match(r"^/(\d+)$", lines[4])
+if not match:
+    send_message(chat_id, "Dòng thứ 5 phải là dạng /1, /2, /3...")
+    return
 
-    if len(lines) >= 5:
-        match = re.match(r"^/(\d+)$", lines[4])
-        if not match:
-            send_message(chat_id, "Dòng cuối phải là dạng /4, /5, /10...")
-            return
+auto_count = int(match.group(1))
+fixed_amounts = []
 
-        qr_count = int(match.group(1))
+for line in lines[5:]:
+    money = int(line.replace(",", "").replace(".", ""))
+    fixed_amounts.append(money)
 
+remain_total = amount - sum(fixed_amounts)
+auto_amounts = split_amount(remain_total, auto_count)
+
+amounts = fixed_amounts + auto_amounts
+qr_count = len(amounts)
     description = "CHUYEN KHOAN"
 
     if not bank_id:
@@ -208,7 +213,7 @@ def handle_message(message):
         send_message(chat_id, "Chỉ cho tạo tối đa 50 mã QR mỗi lần.")
         return
 
-    amounts = split_amount(amount, qr_count)
+
 
     if qr_count > 1:
         send_message(
