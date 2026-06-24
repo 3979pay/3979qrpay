@@ -191,7 +191,7 @@ auto_amounts = split_amount(remain_total, auto_count)
 
 amounts = fixed_amounts + auto_amounts
 qr_count = len(amounts)
-    description = "CHUYEN KHOAN"
+description = "CHUYEN KHOAN"
 
     if not bank_id:
         send_message(chat_id, "Tên ngân hàng không hợp lệ.")
