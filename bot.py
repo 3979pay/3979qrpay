@@ -170,9 +170,9 @@ def handle_message(message):
 
     try:
         amount = int(lines[3].replace(",", "").replace(".", ""))
-except ValueError:
+    except ValueError:
         send_message(chat_id, "Tổng số tiền không hợp lệ.")
-    return
+        return
 
 match = re.match(r"^/(\d+)$", lines[4])
 if not match:
