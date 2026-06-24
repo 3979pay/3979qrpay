@@ -169,7 +169,7 @@ def handle_message(message):
     account_name = lines[2].upper()
 
     try:
-    amount = int(lines[3].replace(",", "").replace(".", ""))
+        amount = int(lines[3].replace(",", "").replace(".", ""))
 except ValueError:
     send_message(chat_id, "Tổng số tiền không hợp lệ.")
     return
