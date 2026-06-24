@@ -231,7 +231,7 @@ def handle_message(message):
     )
 
     for index, qr_amount in enumerate(amounts, start=1):
-        description = f"CHUYEN KHOAN {index}"
+        description = "CHUYEN KHOAN"
 
         qr_url = create_qr_url(
             bank_id,
