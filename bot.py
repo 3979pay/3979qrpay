@@ -57,27 +57,22 @@ def send_qr_photo(chat_id, qr_url, caption):
 
 
 def parse_money(text):
-    text = text.strip().replace(",", "").replace(".", "")
+    cleaned = (
+        text.strip()
+        .replace(",", "")
+        .replace(".", "")
+        .replace(" ", "")
+    )
 
-    if not text.isdigit():
-        raise ValueError("money invalid")
+    if not cleaned.isdigit():
+        raise ValueError("Số tiền không hợp lệ")
 
-    return int(text)
+    amount = int(cleaned)
 
+    if amount <= 0:
+        raise ValueError("Số tiền phải lớn hơn 0")
 
-def split_amount(total, count):
-    base = total // count
-    remain = total % count
-
-    result = []
-
-    for index in range(count):
-        if index < remain:
-            result.append(base + 1)
-        else:
-            result.append(base)
-
-    return result
+    return amount
 
 
 def create_qr_url(
@@ -105,20 +100,16 @@ def handle_callback(callback):
     callback_data = callback.get("data", "")
     message = callback.get("message")
 
-    response = requests.post(
+    requests.post(
         f"{API}/answerCallbackQuery",
         json={
             "callback_query_id": callback_id,
             "text": "Đã ghi nhận chuyển khoản",
         },
         timeout=30,
-    )
-    response.raise_for_status()
+    ).raise_for_status()
 
-    if callback_data != "paid":
-        return
-
-    if not message:
+    if callback_data != "paid" or not message:
         return
 
     chat_id = message["chat"]["id"]
@@ -128,22 +119,21 @@ def handle_callback(callback):
     qr_line = ""
     money_line = ""
 
-    for line in caption.split("\n"):
-        if "QR" in line:
+    for line in caption.splitlines():
+        if line.startswith("🏦 QR"):
             qr_line = line
 
         if "Số tiền:" in line:
             money_line = line
 
-    delete_response = requests.post(
+    requests.post(
         f"{API}/deleteMessage",
         json={
             "chat_id": chat_id,
             "message_id": message_id,
         },
         timeout=30,
-    )
-    delete_response.raise_for_status()
+    ).raise_for_status()
 
     send_message(
         chat_id,
@@ -151,7 +141,7 @@ def handle_callback(callback):
             "✅ Đã chuyển khoản\n\n"
             f"{qr_line}\n"
             f"{money_line}\n\n"
-            "Mã QR đã biến mất."
+            "Mã QR đã được xóa."
         ),
     )
 
@@ -159,22 +149,18 @@ def handle_callback(callback):
 def help_text():
     return (
         "🏦 BOT TẠO MÃ QR NGÂN HÀNG\n\n"
-        "Mẫu dùng:\n\n"
+        "Nhập theo mẫu:\n\n"
         "VIB\n"
         "843551555\n"
         "TRAN THI DUNG\n"
-        "2000000\n"
-        "/1\n"
         "500000\n"
-        "300000\n\n"
-        "Giải thích:\n"
-        "Tổng tiền: 2,000,000\n"
-        "Đơn tự nhập: 500,000 và 300,000\n"
-        "/1 = phần còn lại chia thành 1 QR\n\n"
+        "300000\n"
+        "1200000\n\n"
         "Kết quả:\n"
-        "QR 1 = 500,000\n"
-        "QR 2 = 300,000\n"
-        "QR 3 = 1,200,000"
+        "QR 1 = 500,000 VND\n"
+        "QR 2 = 300,000 VND\n"
+        "QR 3 = 1,200,000 VND\n\n"
+        "Mỗi dòng số tiền sẽ tạo một mã QR riêng."
     )
 
 
@@ -182,7 +168,7 @@ def handle_message(message):
     chat_id = message["chat"]["id"]
     text = message.get("text", "").strip()
 
-    if text in ["/start", "/help"]:
+    if text in ("/start", "/help"):
         send_message(chat_id, help_text())
         return
 
@@ -192,7 +178,7 @@ def handle_message(message):
         if line.strip()
     ]
 
-    if len(lines) < 5:
+    if len(lines) < 4:
         send_message(chat_id, help_text())
         return
 
@@ -200,7 +186,7 @@ def handle_message(message):
         r"[^A-Za-z0-9]",
         "",
         lines[0],
-    )
+    ).upper()
 
     account_number = re.sub(
         r"[^A-Za-z0-9]",
@@ -208,12 +194,12 @@ def handle_message(message):
         lines[1],
     )
 
-    account_name = lines[2].upper()
+    account_name = lines[2].strip().upper()
 
     if not bank_id:
         send_message(
             chat_id,
-            "Tên ngân hàng không hợp lệ.",
+            "Tên hoặc mã ngân hàng không hợp lệ.",
         )
         return
 
@@ -224,97 +210,51 @@ def handle_message(message):
         )
         return
 
-    try:
-        total_amount = parse_money(lines[3])
-    except ValueError:
+    if not account_name:
         send_message(
             chat_id,
-            "Tổng số tiền không hợp lệ.",
+            "Tên chủ tài khoản không hợp lệ.",
         )
         return
 
-    match = re.match(
-        r"^/(\d+)$",
-        lines[4],
-    )
+    amount_lines = lines[3:]
 
-    if not match:
+    if len(amount_lines) > 50:
         send_message(
             chat_id,
-            "Dòng thứ 5 phải là dạng /1, /2, /3...",
+            "Chỉ được tạo tối đa 50 mã QR mỗi lần.",
         )
         return
 
-    auto_count = int(match.group(1))
+    amounts = []
 
-    if total_amount <= 0:
-        send_message(
-            chat_id,
-            "Tổng tiền phải lớn hơn 0.",
-        )
-        return
-
-    if auto_count <= 0:
-        send_message(
-            chat_id,
-            "Số QR tự chia phải lớn hơn 0.",
-        )
-        return
-
-    fixed_amounts = []
-
-    for line in lines[5:]:
+    for line_number, line in enumerate(
+        amount_lines,
+        start=4,
+    ):
         try:
-            money = parse_money(line)
+            amount = parse_money(line)
         except ValueError:
             send_message(
                 chat_id,
-                f"Số tiền đặt riêng không hợp lệ: {line}",
+                (
+                    f"Số tiền tại dòng {line_number} "
+                    f"không hợp lệ: {line}"
+                ),
             )
             return
 
-        if money <= 0:
-            send_message(
-                chat_id,
-                f"Số tiền đặt riêng phải lớn hơn 0: {line}",
-            )
-            return
+        amounts.append(amount)
 
-        fixed_amounts.append(money)
-
-    fixed_total = sum(fixed_amounts)
-    remain_total = total_amount - fixed_total
-
-    if remain_total < 0:
-        send_message(
-            chat_id,
-            "Tổng tiền các đơn đặt riêng lớn hơn tổng tiền.",
-        )
-        return
-
-    auto_amounts = split_amount(
-        remain_total,
-        auto_count,
-    )
-
-    amounts = fixed_amounts + auto_amounts
+    total_amount = sum(amounts)
     qr_count = len(amounts)
-
-    if qr_count > 50:
-        send_message(
-            chat_id,
-            "Chỉ cho tạo tối đa 50 mã QR mỗi lần.",
-        )
-        return
 
     send_message(
         chat_id,
         (
             f"✅ Đang tạo {qr_count} mã QR\n"
-            f"💰 Tổng tiền: {total_amount:,} VND\n"
-            f"✍️ Đơn tự nhập: {len(fixed_amounts)}\n"
-            f"🤖 Đơn bot tự tính: {auto_count}\n"
-            f"💵 Còn lại bot chia: {remain_total:,} VND"
+            f"💰 Tổng số tiền: {total_amount:,} VND\n"
+            "Mỗi số tiền tương ứng với một mã QR."
         ),
     )
 
@@ -325,16 +265,16 @@ def handle_message(message):
         description = "CHUYEN TIEN"
 
         qr_url = create_qr_url(
-            bank_id,
-            account_number,
-            account_name,
-            qr_amount,
-            description,
+            bank_id=bank_id,
+            account_number=account_number,
+            account_name=account_name,
+            amount=qr_amount,
+            description=description,
         )
 
         caption = (
             f"🏦 QR {index}/{qr_count}\n"
-            f"💵 Ngân hàng: {bank_id.upper()}\n"
+            f"💵 Ngân hàng: {bank_id}\n"
             f"💳 Số tài khoản: {account_number}\n"
             f"👤 Chủ tài khoản: {account_name}\n"
             f"💰 Số tiền: {qr_amount:,} VND\n"
@@ -372,7 +312,6 @@ def run_bot():
             )
 
             response.raise_for_status()
-
             data = response.json()
 
             if not data.get("ok"):
@@ -404,10 +343,7 @@ def run_bot():
                     )
 
         except KeyboardInterrupt:
-            print(
-                "\nĐã dừng bot.",
-                flush=True,
-            )
+            print("\nĐã dừng bot.", flush=True)
             break
 
         except requests.RequestException as error:
