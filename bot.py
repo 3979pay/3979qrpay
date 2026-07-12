@@ -6,32 +6,44 @@ from urllib.parse import urlencode
 import requests
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
 if not BOT_TOKEN:
-    raise RuntimeError("Khong tim thay TELEGRAM_BOT_TOKEN trong file .env")
+    raise RuntimeError(
+        "Khong tim thay TELEGRAM_BOT_TOKEN trong file .env"
+    )
 
 API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 
 def send_message(chat_id, text):
-    requests.post(
+    response = requests.post(
         f"{API}/sendMessage",
-        json={"chat_id": chat_id, "text": text},
+        json={
+            "chat_id": chat_id,
+            "text": text,
+        },
         timeout=30,
-    ).raise_for_status()
+    )
+    response.raise_for_status()
 
 
 def send_qr_photo(chat_id, qr_url, caption):
     keyboard = {
         "inline_keyboard": [
-            [{"text": "✅ Đã chuyển khoản", "callback_data": "paid"}]
+            [
+                {
+                    "text": "✅ Đã chuyển khoản",
+                    "callback_data": "paid",
+                }
+            ]
         ]
     }
 
-    requests.post(
+    response = requests.post(
         f"{API}/sendPhoto",
         json={
             "chat_id": chat_id,
@@ -40,13 +52,16 @@ def send_qr_photo(chat_id, qr_url, caption):
             "reply_markup": keyboard,
         },
         timeout=30,
-    ).raise_for_status()
+    )
+    response.raise_for_status()
 
 
 def parse_money(text):
     text = text.strip().replace(",", "").replace(".", "")
+
     if not text.isdigit():
         raise ValueError("money invalid")
+
     return int(text)
 
 
@@ -55,8 +70,9 @@ def split_amount(total, count):
     remain = total % count
 
     result = []
-    for i in range(count):
-        if i < remain:
+
+    for index in range(count):
+        if index < remain:
             result.append(base + 1)
         else:
             result.append(base)
@@ -64,7 +80,13 @@ def split_amount(total, count):
     return result
 
 
-def create_qr_url(bank_id, account_number, account_name, amount, description):
+def create_qr_url(
+    bank_id,
+    account_number,
+    account_name,
+    amount,
+    description,
+):
     params = {
         "amount": amount,
         "addInfo": description,
@@ -72,7 +94,7 @@ def create_qr_url(bank_id, account_number, account_name, amount, description):
     }
 
     return (
-        f"https://img.vietqr.io/image/"
+        "https://img.vietqr.io/image/"
         f"{bank_id}-{account_number}-compact2.png?"
         f"{urlencode(params)}"
     )
@@ -80,9 +102,10 @@ def create_qr_url(bank_id, account_number, account_name, amount, description):
 
 def handle_callback(callback):
     callback_id = callback["id"]
+    callback_data = callback.get("data", "")
     message = callback.get("message")
 
-    requests.post(
+    response = requests.post(
         f"{API}/answerCallbackQuery",
         json={
             "callback_query_id": callback_id,
@@ -90,6 +113,10 @@ def handle_callback(callback):
         },
         timeout=30,
     )
+    response.raise_for_status()
+
+    if callback_data != "paid":
+        return
 
     if not message:
         return
@@ -104,10 +131,11 @@ def handle_callback(callback):
     for line in caption.split("\n"):
         if "QR" in line:
             qr_line = line
+
         if "Số tiền:" in line:
             money_line = line
 
-    requests.post(
+    delete_response = requests.post(
         f"{API}/deleteMessage",
         json={
             "chat_id": chat_id,
@@ -115,10 +143,16 @@ def handle_callback(callback):
         },
         timeout=30,
     )
+    delete_response.raise_for_status()
 
     send_message(
         chat_id,
-        f"✅ Đã chuyển khoản\n\n{qr_line}\n{money_line}\n\nMã QR đã biến mất."
+        (
+            "✅ Đã chuyển khoản\n\n"
+            f"{qr_line}\n"
+            f"{money_line}\n\n"
+            "Mã QR đã biến mất."
+        ),
     )
 
 
@@ -152,43 +186,79 @@ def handle_message(message):
         send_message(chat_id, help_text())
         return
 
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    lines = [
+        line.strip()
+        for line in text.splitlines()
+        if line.strip()
+    ]
 
     if len(lines) < 5:
         send_message(chat_id, help_text())
         return
 
-    bank_id = re.sub(r"[^A-Za-z0-9]", "", lines[0])
-    account_number = re.sub(r"[^A-Za-z0-9]", "", lines[1])
+    bank_id = re.sub(
+        r"[^A-Za-z0-9]",
+        "",
+        lines[0],
+    )
+
+    account_number = re.sub(
+        r"[^A-Za-z0-9]",
+        "",
+        lines[1],
+    )
+
     account_name = lines[2].upper()
 
     if not bank_id:
-        send_message(chat_id, "Tên ngân hàng không hợp lệ.")
+        send_message(
+            chat_id,
+            "Tên ngân hàng không hợp lệ.",
+        )
         return
 
-    if not (6 <= len(account_number) <= 19):
-        send_message(chat_id, "Số tài khoản không hợp lệ.")
+    if not 6 <= len(account_number) <= 19:
+        send_message(
+            chat_id,
+            "Số tài khoản không hợp lệ.",
+        )
         return
 
     try:
         total_amount = parse_money(lines[3])
     except ValueError:
-        send_message(chat_id, "Tổng số tiền không hợp lệ.")
+        send_message(
+            chat_id,
+            "Tổng số tiền không hợp lệ.",
+        )
         return
 
-    match = re.match(r"^/(\d+)$", lines[4])
+    match = re.match(
+        r"^/(\d+)$",
+        lines[4],
+    )
+
     if not match:
-        send_message(chat_id, "Dòng thứ 5 phải là dạng /1, /2, /3...")
+        send_message(
+            chat_id,
+            "Dòng thứ 5 phải là dạng /1, /2, /3...",
+        )
         return
 
     auto_count = int(match.group(1))
 
     if total_amount <= 0:
-        send_message(chat_id, "Tổng tiền phải lớn hơn 0.")
+        send_message(
+            chat_id,
+            "Tổng tiền phải lớn hơn 0.",
+        )
         return
 
     if auto_count <= 0:
-        send_message(chat_id, "Số QR tự chia phải lớn hơn 0.")
+        send_message(
+            chat_id,
+            "Số QR tự chia phải lớn hơn 0.",
+        )
         return
 
     fixed_amounts = []
@@ -197,11 +267,17 @@ def handle_message(message):
         try:
             money = parse_money(line)
         except ValueError:
-            send_message(chat_id, f"Số tiền đặt riêng không hợp lệ: {line}")
+            send_message(
+                chat_id,
+                f"Số tiền đặt riêng không hợp lệ: {line}",
+            )
             return
 
         if money <= 0:
-            send_message(chat_id, f"Số tiền đặt riêng phải lớn hơn 0: {line}")
+            send_message(
+                chat_id,
+                f"Số tiền đặt riêng phải lớn hơn 0: {line}",
+            )
             return
 
         fixed_amounts.append(money)
@@ -210,27 +286,42 @@ def handle_message(message):
     remain_total = total_amount - fixed_total
 
     if remain_total < 0:
-        send_message(chat_id, "Tổng tiền các đơn đặt riêng lớn hơn tổng tiền.")
+        send_message(
+            chat_id,
+            "Tổng tiền các đơn đặt riêng lớn hơn tổng tiền.",
+        )
         return
 
-    auto_amounts = split_amount(remain_total, auto_count)
+    auto_amounts = split_amount(
+        remain_total,
+        auto_count,
+    )
+
     amounts = fixed_amounts + auto_amounts
     qr_count = len(amounts)
 
     if qr_count > 50:
-        send_message(chat_id, "Chỉ cho tạo tối đa 50 mã QR mỗi lần.")
+        send_message(
+            chat_id,
+            "Chỉ cho tạo tối đa 50 mã QR mỗi lần.",
+        )
         return
 
     send_message(
         chat_id,
-        f"✅ Đang tạo {qr_count} mã QR\n"
-        f"💰 Tổng tiền: {total_amount:,} VND\n"
-        f"✍️ Đơn tự nhập: {len(fixed_amounts)}\n"
-        f"🤖 Đơn bot tự tính: {auto_count}\n"
-        f"💵 Còn lại bot chia: {remain_total:,} VND"
+        (
+            f"✅ Đang tạo {qr_count} mã QR\n"
+            f"💰 Tổng tiền: {total_amount:,} VND\n"
+            f"✍️ Đơn tự nhập: {len(fixed_amounts)}\n"
+            f"🤖 Đơn bot tự tính: {auto_count}\n"
+            f"💵 Còn lại bot chia: {remain_total:,} VND"
+        ),
     )
 
-    for index, qr_amount in enumerate(amounts, start=1):
+    for index, qr_amount in enumerate(
+        amounts,
+        start=1,
+    ):
         description = "CHUYEN TIEN"
 
         qr_url = create_qr_url(
@@ -250,32 +341,91 @@ def handle_message(message):
             f"📝 Nội dung: {description}"
         )
 
-        send_qr_photo(chat_id, qr_url, caption)
+        send_qr_photo(
+            chat_id,
+            qr_url,
+            caption,
+        )
+
         time.sleep(0.5)
 
 
 def run_bot():
     offset = 0
 
-while True:
-    try:
-        response = requests.get(
-            f"{API}/getUpdates",
-            params={"offset": offset, "timeout": 30},
-            timeout=35,
-        )
-        response.raise_for_status()
+    print("Bot đang chạy...", flush=True)
+    print("Nhấn Ctrl + C để dừng bot.", flush=True)
 
-        data = response.json()
-        print("Phản hồi getUpdates:", data, flush=True)
+    while True:
+        try:
+            response = requests.get(
+                f"{API}/getUpdates",
+                params={
+                    "offset": offset,
+                    "timeout": 30,
+                    "allowed_updates": [
+                        "message",
+                        "callback_query",
+                    ],
+                },
+                timeout=35,
+            )
 
-        for update in data.get("result", []):
-            print("Đã nhận update:", update, flush=True)
-            offset = update["update_id"] + 1
+            response.raise_for_status()
 
-            if "message" in update:
-                handle_message(update["message"])
+            data = response.json()
 
-    except Exception as e:
-        print("Lỗi bot:", repr(e), flush=True)
-        time.sleep(3)
+            if not data.get("ok"):
+                print(
+                    "Telegram API trả về lỗi:",
+                    data,
+                    flush=True,
+                )
+                time.sleep(3)
+                continue
+
+            for update in data.get("result", []):
+                offset = update["update_id"] + 1
+
+                print(
+                    "Đã nhận update:",
+                    update["update_id"],
+                    flush=True,
+                )
+
+                if "message" in update:
+                    handle_message(
+                        update["message"]
+                    )
+
+                elif "callback_query" in update:
+                    handle_callback(
+                        update["callback_query"]
+                    )
+
+        except KeyboardInterrupt:
+            print(
+                "\nĐã dừng bot.",
+                flush=True,
+            )
+            break
+
+        except requests.RequestException as error:
+            print(
+                "Lỗi kết nối Telegram:",
+                repr(error),
+                flush=True,
+            )
+            time.sleep(3)
+
+        except Exception as error:
+            print(
+                "Lỗi bot:",
+                repr(error),
+                flush=True,
+            )
+            time.sleep(3)
+
+
+if __name__ == "__main__":
+    run_bot()
