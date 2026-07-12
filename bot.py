@@ -257,37 +257,25 @@ def handle_message(message):
 def run_bot():
     offset = 0
 
-    print("Bot dang chay...")
-    print("Nhan Ctrl + C de dung bot.")
+while True:
+    try:
+        response = requests.get(
+            f"{API}/getUpdates",
+            params={"offset": offset, "timeout": 30},
+            timeout=35,
+        )
+        response.raise_for_status()
 
-    while True:
-        try:
-            response = requests.get(
-                f"{API}/getUpdates",
-                params={"offset": offset, "timeout": 30},
-                timeout=40,
-            )
-            response.raise_for_status()
+        data = response.json()
+        print("Phản hồi getUpdates:", data, flush=True)
 
-            data = response.json()
+        for update in data.get("result", []):
+            print("Đã nhận update:", update, flush=True)
+            offset = update["update_id"] + 1
 
-            for update in data.get("result", []):
-                offset = update["update_id"] + 1
+            if "message" in update:
+                handle_message(update["message"])
 
-                if "message" in update:
-                    handle_message(update["message"])
-
-                if "callback_query" in update:
-                    handle_callback(update["callback_query"])
-
-        except KeyboardInterrupt:
-            print("\nDa dung bot.")
-            break
-
-        except Exception as error:
-            print("Loi:", error)
-            time.sleep(3)
-
-
-if __name__ == "__main__":
-    run_bot()
+    except Exception as e:
+        print("Lỗi bot:", repr(e), flush=True)
+        time.sleep(3)
